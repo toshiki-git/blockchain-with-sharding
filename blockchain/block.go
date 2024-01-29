@@ -16,9 +16,10 @@ type BlockHeader struct {
 type Block struct {
 	Header       BlockHeader
 	Transactions []*Transaction
+	Creator      string // 生成者のアドレスを追加
 }
 
-func NewBlock(number int64, previousHash string, transactions []*Transaction) *Block {
+func NewBlock(number int64, previousHash string, transactions []*Transaction, creator string) *Block {
 	block := &Block{
 		Header: BlockHeader{
 			Number:       number,
@@ -26,6 +27,7 @@ func NewBlock(number int64, previousHash string, transactions []*Transaction) *B
 			Timestamp:    time.Now().Unix(),
 		},
 		Transactions: transactions,
+		Creator:      creator,
 	}
 
 	blockHash := calculateBlockHash(block)
