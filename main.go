@@ -1,69 +1,104 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"fmt"
-	"math/rand"
-	"time"
 
-	"github.com/libp2p/go-libp2p/core/host"
+	libp2p "github.com/libp2p/go-libp2p"
+	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
-	"github.com/toshiki-git/blockchain-with-sharding/p2p"
 )
+
+func handleStream(s network.Stream) {
+	fmt.Println("New stream received")
+	reader := bufio.NewReader(s)
+	msg, _ := reader.ReadString('\n')
+	fmt.Printf("Message received: %s", msg)
+}
 
 func main() {
 	ctx := context.Background()
-	nodes := make([]host.Host, 4)
 
-	// 4つのノードを作成
-	for i := range nodes {
-		node := p2p.CreateNode()
-		nodes[i] = node
-		fmt.Printf("ノード%d: %s\n", i, node.ID().ShortString())
+	// ノード1の作成
+	node1, err := libp2p.New()
+	if err != nil {
+		panic(err)
+	}
+	defer node1.Close()
+
+	// ノード2の作成
+	node2, err := libp2p.New(libp2p.ListenAddrStrings("/ip4/127.0.0.1/tcp/0"))
+	if err != nil {
+		panic(err)
+	}
+	node2.SetStreamHandler("/myapp/1.0.0", handleStream)
+	defer node2.Close()
+
+	// ノード2の作成
+	node3, err := libp2p.New(libp2p.ListenAddrStrings("/ip4/127.0.0.1/tcp/0"))
+	if err != nil {
+		panic(err)
+	}
+	defer node3.Close()
+
+	// ノード2のアドレス情報を出力
+	for _, addr := range node2.Addrs() {
+		fmt.Printf("Node2 is listening on %s/p2p/%s\n", addr, node2.ID().ShortString())
 	}
 
-	// ノードを相互に接続
-	for i, node := range nodes {
-		for j, otherNode := range nodes {
-			if i == j {
-				continue
-			}
-			addrInfo := peer.AddrInfo{
-				ID:    otherNode.ID(),
-				Addrs: otherNode.Addrs(),
-			}
-			if err := node.Connect(ctx, addrInfo); err != nil {
-				panic(err)
-			}
-		}
+	fmt.Printf("Node2 ID111111: %s\n", node2.Addrs())
+
+	/* peerInfo1 := peer.AddrInfo{
+		ID:    node1.ID(),
+		Addrs: node1.Addrs(),
+	} */
+
+	peerInfo2 := peer.AddrInfo{
+		ID:    node2.ID(),
+		Addrs: node2.Addrs(),
 	}
 
-	// メッセージの送信ロジック
-	sendRandomMessage := func(nodes []host.Host) {
-		senderIndex := rand.Intn(len(nodes))
-		receiverIndex := rand.Intn(len(nodes))
-		// 自分自身には送信しないようにする
-		for senderIndex == receiverIndex {
-			receiverIndex = rand.Intn(len(nodes))
-		}
+	/* peerInfo3 := peer.AddrInfo{
+		ID:    node3.ID(),
+		Addrs: node3.Addrs(),
+	} */
 
-		sender := nodes[senderIndex]
-		receiver := nodes[receiverIndex]
-
-		fmt.Printf("メッセージ送信: %s -> %s\n", sender.ID().ShortString(), receiver.ID().ShortString())
-
-		// 実際にはここでメッセージを送信します
-		// この例では、実際のメッセージ送信メカニズムは実装されていません
+	// ノード1からノード2へ接続
+	if err := node1.Connect(ctx, peerInfo2); err != nil {
+		panic(err)
 	}
 
-	// 一定間隔でメッセージを送信
-	ticker := time.NewTicker(5 * time.Second)
-	go func() {
-		for range ticker.C {
-			sendRandomMessage(nodes)
-		}
-	}()
+	if err := node3.Connect(ctx, peerInfo2); err != nil {
+		panic(err)
+	}
 
-	// 無限ループでプログラムが終了しないようにする
+	// node1に接続されているすべてのピアのIDを取得し、表示する
+	peers := node2.Network().Peers()
+	for _, peerID := range peers {
+		fmt.Printf("Node2 is connected to: %s\n", peerID.ShortString())
+	}
+
+	// ノード1からノード2へメッセージを送信
+	s, err := node1.NewStream(ctx, node2.ID(), "/myapp/1.0.0")
+	if err != nil {
+		panic(err)
+	}
+	fmt.Fprintln(s, "Hello, node2! from node1")
+	if err := s.Close(); err != nil {
+		panic(err)
+	}
+
+	// ノード3からノード2へメッセージを送信
+	s, err = node3.NewStream(ctx, node2.ID(), "/myapp/1.0.0")
+	if err != nil {
+		panic(err)
+	}
+	fmt.Fprintln(s, "Hello, node2! from node3")
+	if err := s.Close(); err != nil {
+		panic(err)
+	}
+
+	// プログラムが終了しないように待つ
 	select {}
 }
