@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 
 	libp2p "github.com/libp2p/go-libp2p"
@@ -10,11 +11,38 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 )
 
-func handleStream(s network.Stream) {
-	fmt.Println("New stream received")
+// 　メッセージを受信したときの処理
+/* func handleStream(s network.Stream) {
+	fmt.Printf("New stream received from %s\n", s.Conn().RemotePeer().ShortString())
 	reader := bufio.NewReader(s)
 	msg, _ := reader.ReadString('\n')
 	fmt.Printf("Message received: %s", msg)
+}
+*/
+
+func handleStream(s network.Stream) {
+	fmt.Printf("New stream received from %s\n", s.Conn().RemotePeer().ShortString())
+	reader := bufio.NewReader(s)
+
+	// メッセージを1行読み込む（JSONデータを想定）
+	msg, err := reader.ReadString('\n')
+	if err != nil {
+		panic(err) // 実際には適切にエラーハンドリングを行う
+	}
+
+	// 受け取ったメッセージをBlock型にデコード
+	var block Block
+	if err := json.Unmarshal([]byte(msg), &block); err != nil {
+		panic(err) // 実際には適切にエラーハンドリングを行う
+	}
+
+	fmt.Printf("Block received: %+v\n", block)
+}
+
+type Block struct {
+	Index     int
+	Timestamp string
+	CreateBy  string
 }
 
 func main() {
@@ -84,7 +112,16 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	fmt.Fprintln(s, "Hello, node2! from node1")
+	block := Block{Index: 2, Timestamp: "2021-01-01", CreateBy: "node3"}
+	blockBytes, err := json.Marshal(block)
+	if err != nil {
+		panic(err)
+	}
+	_, err = s.Write(blockBytes)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Fprintln(s) // JSONデータの後に改行を追加
 	if err := s.Close(); err != nil {
 		panic(err)
 	}
@@ -94,10 +131,25 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	fmt.Fprintln(s, "Hello, node2! from node3")
+
+	block = Block{Index: 1, Timestamp: "2021-01-01", CreateBy: "node3"}
+	blockBytes, err = json.Marshal(block)
+	if err != nil {
+		panic(err)
+	}
+	_, err = s.Write(blockBytes)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Fprintln(s) // JSONデータの後に改行を追加
 	if err := s.Close(); err != nil {
 		panic(err)
 	}
+
+	/* fmt.Fprintln(s, block)
+	if err := s.Close(); err != nil {
+		panic(err)
+	} */
 
 	// プログラムが終了しないように待つ
 	select {}
