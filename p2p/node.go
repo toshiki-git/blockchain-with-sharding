@@ -1,6 +1,7 @@
 package p2p
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"sync"
@@ -9,6 +10,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/core/protocol"
 )
 
 // NodeManager は、ネットワーク内のノードを管理します。
@@ -22,15 +24,22 @@ func NewNodeManager() *NodeManager {
 	return &NodeManager{}
 }
 
+func handleStream(s network.Stream) {
+	fmt.Printf("New stream received from %s\n", s.Conn().RemotePeer().ShortString())
+	reader := bufio.NewReader(s)
+	msg, _ := reader.ReadString('\n')
+	fmt.Printf("Message received: %s", msg)
+}
+
 // CreateNode は、新しいlibp2pノードを作成し、それをネットワークに追加します。
-func (nm *NodeManager) CreateNode() host.Host {
+func (nm *NodeManager) CreateNode(pid protocol.ID) host.Host {
 	node, err := libp2p.New()
 	if err != nil {
 		panic(err)
 	}
-	node.SetStreamHandler("/echo/1.0.0", func(s network.Stream) {
-		fmt.Println("接続が確立されました")
-	})
+
+	node.SetStreamHandler(pid, handleStream)
+
 	nm.lock.Lock()
 	defer nm.lock.Unlock()
 	nm.nodes = append(nm.nodes, node)
@@ -38,7 +47,7 @@ func (nm *NodeManager) CreateNode() host.Host {
 }
 
 // ConnectNodes は、２つのノード間で接続を確立します。
-func (nm *NodeManager) ConnectNodes(node1, node2 host.Host) error {
+func (nm *NodeManager) ConnectNode(node1, node2 host.Host) error {
 	node2Info := peer.AddrInfo{
 		ID:    node2.ID(),
 		Addrs: node2.Addrs(),
@@ -46,19 +55,22 @@ func (nm *NodeManager) ConnectNodes(node1, node2 host.Host) error {
 	return node1.Connect(context.Background(), node2Info)
 }
 
+func (nm *NodeManager) SendMessage(from, to host.Host, pid protocol.ID) {
+	s, err := from.NewStream(context.Background(), to.ID(), pid)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Fprintf(s, "This is message from %s to %s", from.ID().ShortString(), to.ID().ShortString())
+	if err := s.Close(); err != nil {
+		panic(err)
+	}
+}
+
 // ListNodes は、ネットワーク内のすべてのノードのIDとアドレスを表示します。
 func (nm *NodeManager) ListNodes() {
 	nm.lock.Lock()
 	defer nm.lock.Unlock()
-	for _, node := range nm.nodes {
-		addrs, err := peer.AddrInfoToP2pAddrs(&peer.AddrInfo{
-			ID:    node.ID(),
-			Addrs: node.Addrs(),
-		})
-		if err != nil {
-			fmt.Println("アドレスの取得に失敗しました:", err)
-			continue
-		}
-		fmt.Printf("node ID: %s, address: %s\n\n", node.ID().ShortString(), addrs)
+	for i, node := range nm.nodes {
+		fmt.Printf("%d: node ID: %s\n", i+1, node.ID().ShortString())
 	}
 }
